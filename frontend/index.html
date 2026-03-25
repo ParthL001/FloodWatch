@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Flood Early Warning System — Unified</title>
+  <meta name="description" content="Unified Flood system: login, map, dashboard, alerts, citizen feedback." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111a2b;
+      --muted: #90a4b8;
+      --text: #e6eef8;
+      --brand: #34c6ff;
+      --brand-2: #4ade80;
+      --accent: #ffd166;
+      --danger: #ff6b6b;
+      --radius: 12px;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    /* apply FEWS aesthetic on top of Tailwind utility classes */
+    body {
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 80% -10%, rgba(52,198,255,.06), rgba(0,0,0,0) 60%), var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    header { backdrop-filter: saturate(180%) blur(8px); border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .brand-logo { background: linear-gradient(145deg,var(--brand),var(--brand-2)); color:#00111a; box-shadow: var(--shadow); }
+    .panel { background: linear-gradient(180deg, rgba(17,26,43,.85), rgba(17,26,43,1)); border: 1px solid rgba(255,255,255,0.04); border-radius: var(--radius); box-shadow: var(--shadow); }
+    input, select, textarea { background: rgba(17,26,43,0.9); color:var(--text); border:1px solid rgba(255,255,255,0.06); border-radius:10px; }
+    .btn-brand { background: linear-gradient(120deg,var(--brand),var(--brand-2)); color:#00202c; font-weight:700; border-radius:999px; padding:.5rem .9rem; box-shadow: var(--shadow); }
+    .pill-online { background: rgba(74,222,128,.22); color:#072a11; padding:.25rem .6rem; border-radius:999px; font-weight:700; display:inline-flex; gap:.4rem; align-items:center;}
+    .toast { position: fixed; right: 1rem; bottom: 1rem; background: var(--panel); border:1px solid rgba(255,255,255,0.06); box-shadow: var(--shadow); border-radius:10px; padding:.6rem .9rem; display:none; }
+    /* small helpers */
+    .muted { color: var(--muted); }
+    /* map height adjustments */
+    #map { min-height: 420px; border-radius: 12px; border: 2px dashed rgba(255,255,255,0.06); }
+    /* responsive tweaks for smaller screens */
+    @media (max-width: 960px) {
+      .grid-cols-3-md { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+
+
+  <a class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:bg-black focus:text-white px-3 py-2 rounded" href="#main">Skip to content</a>
+
+  <header class="w-full sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
+      <div class="flex items-center gap-3">
+        <div class="brand-logo w-10 h-10 grid place-items-center rounded-lg font-extrabold">FEW</div>
+        <div>
+          <div class="text-xl font-extrabold">Flood Watch</div>
+          <div class="text-sm muted">Maharashtra Flood Early Warning</div>
+        </div>
+      </div>
+
+      <nav class="ml-auto flex items-center gap-3">
+        <button id="showLoginBtn" class="btn-brand px-4 py-2">Login / Register</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+
+    <section class="grid md:grid-cols-2 gap-6 items-start">
+      <div class="panel p-6">
+        <span class="inline-block bg-cyan-500/10 text-cyan-300 px-3 py-1 text-sm rounded-full font-semibold">Community Safety</span>
+        <h1 class="font-nunito text-3xl md:text-4xl font-extrabold mt-3 leading-tight">Stay Ahead of Floods with Real-Time Alerts</h1>
+        <p class="muted mt-3">Single page app: login, map, dashboard, pincode checks, subscriptions and citizen feedback — all together. Uses your backend endpoints if available.</p>
+
+        <div class="grid grid-cols-3 gap-3 mt-5">
+          <div class="p-3 rounded-lg panel">
+            <div class="text-sm muted">Active Gauges</div>
+            <div id="kpi-gauges" class="font-extrabold text-lg">—</div>
+          </div>
+          <div class="p-3 rounded-lg panel">
+            <div class="text-sm muted">Areas Monitored</div>
+            <div class="font-extrabold text-lg">Pincode-wise</div>
+          </div>
+          <div class="p-3 rounded-lg panel">
+            <div class="text-sm muted">Last Update</div>
+            <div id="kpi-updated" class="font-extrabold text-lg">—</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="panel p-4">
+        <div class="flex items-center justify-between">
+          <strong>Current Status</strong>
+          <span id="net-pill" class="pill-online"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span> Online</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+          <div class="p-3 rounded-lg panel">
+            <h3 class="font-semibold">River Level</h3>
+            <p><strong id="river-level" class="text-green-400">Normal</strong></p>
+            <p class="muted text-sm mt-1">No immediate overflow risk.</p>
+          </div>
+          <div class="p-3 rounded-lg panel">
+            <h3 class="font-semibold">Water Level (example)</h3>
+            <p><strong id="water-level-display" class="text-green-400">— m</strong></p>
+            <p class="muted text-sm mt-1">Live sensor feed (backend required)</p>
+          </div>
+          <div class="p-3 rounded-lg panel">
+            <h3 class="font-semibold">Advisory</h3>
+            <p><strong id="advisory" class="text-green-400">Green</strong></p>
+            <p class="muted text-sm mt-1">Stay informed</p>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="panel p-4">
+      <h2 class="text-xl font-bold mb-2">Map</h2>
+      <div id="map" role="region" aria-label="Flood Risk Map"></div>
+    </section>
+
+    <section class="grid md:grid-cols-2 gap-6">
+      <div class="panel p-4">
+        <h3 class="font-semibold mb-3">Check Flood Status by Pincode</h3>
+        <div class="flex gap-3">
+          <input id="pincodeInput" class="flex-1 p-3" type="text" maxlength="6" placeholder="Enter Pincode, e.g. 411001">
+          <button id="checkBtn" class="btn-brand">Check</button>
+        </div>
+
+        <div id="statusCard" class="hidden mt-4 panel p-3">
+          <h4 id="pincodeDisplay" class="font-bold"></h4>
+          <p><strong>Status:</strong> <span id="statusText"></span></p>
+          <p><strong>Water Level:</strong> <span id="waterLevel"></span> m</p>
+          <p><strong>Nearest Station:</strong> <span id="stationName"></span></p>
+          <p><strong>Last Updated:</strong> <span id="lastUpdated"></span></p>
+        </div>
+
+        <hr class="my-4 border-white/6">
+
+        <h3 class="font-semibold mb-2">Subscribe for Alerts</h3>
+<form id="subscribeForm" class="space-y-3">
+  <div class="grid grid-cols-2 gap-3">
+    <input id="subName" name="name" type="text" placeholder="Full name" class="p-2" required />
+    <input id="subPhone" name="phone" type="tel" placeholder="Phone for SMS (optional)" class="p-2" />
+  </div>
+  <div class="grid grid-cols-2 gap-3">
+    <input id="subEmail" name="email" type="email" placeholder="Email (optional)" class="p-2" />
+    <input id="subPincode" name="pincode" type="text" placeholder="Pincode" maxlength="6" class="p-2" required />
+  </div>
+  <div class="flex gap-3">
+    <select id="subChannel" class="p-2">
+      <option>SMS</option>
+      <option>Email</option>
+      <option>Both</option>
+    </select>
+    <select id="subSeverity" class="p-2">
+      <option>All</option>
+      <option>Warning & above</option>
+      <option>Emergency only</option>
+    </select>
+  </div>
+  <button id="subscribeBtn" class="btn-brand" type="submit">Subscribe</button>
+  <p class="muted text-sm">Subscriptions are saved locally if backend not configured.</p>
+</form>
+
+      </div>
+
+      <aside class="panel p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold">Recent Alerts</h3>
+          <button id="refreshAlerts" class="text-sm muted">Refresh</button>
+        </div>
+        <div id="alertsList" class="space-y-3 max-h-44 overflow-y-auto">
+          </div>
+
+        <hr class="my-4 border-white/6">
+
+        <h3 class="font-semibold mb-2">Citizen Feedback</h3>
+        <form id="feedbackForm" class="space-y-3" enctype="multipart/form-data">
+          <input id="fb-name" type="text" placeholder="Your name" class="p-2" />
+          <input id="fb-pincode" type="text" maxlength="6" placeholder="Pincode" class="p-2" />
+          <textarea id="fb-desc" rows="3" placeholder="Describe issue" class="p-2"></textarea>
+          <input id="fb-media" type="file" accept="image/,video/" />
+          <div id="mediaPreview" class="mt-2"></div>
+          <button class="btn-brand w-full" type="submit">Submit Report</button>
+          <p class="muted text-sm">Files are uploaded to /api/citizen-feedback if your backend supports it.</p>
+        </form>
+      </aside>
+    </section>
+
+    <section class="panel p-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Your Dashboard</h3>
+        <div>
+          <span id="userName" class="muted mr-3"></span>
+          <button id="logoutBtn" class="px-3 py-1 rounded bg-white/5">Logout</button>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-3 mt-4">
+        <div class="panel p-3">
+          <h4 class="font-semibold">Personal Alerts</h4>
+          <div id="personalAlerts" class="mt-3 space-y-2 text-sm"></div>
+        </div>
+        <div class="panel p-3">
+          <h4 class="font-semibold">Your Subscriptions</h4>
+          <div id="localSubs" class="mt-3 text-sm"></div>
+        </div>
+        <div class="panel p-3">
+          <h4 class="font-semibold">Quick Actions</h4>
+          <div class="mt-3 space-y-2 text-sm">
+            <button id="goToMap" class="w-full text-left">View Map</button>
+            <button id="openFeedback" class="w-full text-left">Report Issue</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="w-full mt-6 border-t border-white/6">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between muted text-sm">
+      <div>© <span id="year"></span> Flood Early Warning</div>
+      <div id="last-updated">Updated just now</div>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast">Saved</div>
+
+  <script>
+    // --- small helpers ---
+   const apiBase = "http://localhost:5500"; // leave empty to call same host (localhost:3000) or set to your API base
+    const toastEl = document.getElementById('toast');
+    function showToast(msg = 'Done') { toastEl.textContent = msg; toastEl.style.display = 'block'; setTimeout(()=> toastEl.style.display='none', 2500); }
+
+    // dynamic year & timestamps
+    document.getElementById('year').textContent = new Date().getFullYear();
+    document.getElementById('kpi-updated').textContent = new Date().toLocaleString();
+
+    // Try to use backend; fall back to demo data
+    let backendAlive = false;
+    (async () => {
+      try {
+        const res = await fetch(apiBase + '/api/flood-status/all');
+        if (res.ok) backendAlive = true;
+      } catch (e) { backendAlive = false; }
+    })();
+
+    // --- NETWORK status pill ---
+    const pill = document.getElementById('net-pill');
+    function setOnlineStatus() {
+      if (navigator.onLine) {
+        pill.classList.remove('bg-red-500/10'); pill.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span> Online';
+      } else {
+        pill.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span> Offline';
+      }
+    }
+    window.addEventListener('online', setOnlineStatus);
+    window.addEventListener('offline', setOnlineStatus);
+    setOnlineStatus();
+
+    // --- MAP setup (Leaflet) ---
+    const map = L.map('map').setView([19.7515, 75.7139], 6);
+    
+    // FIX: Added noWrap:true to stop the map from repeating and minZoom
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ 
+        attribution: '&copy; OSM',
+        noWrap: true,
+        minZoom: 3 // Optional: prevent zooming out too far
+    }).addTo(map);
+
+    // FIX: Set max bounds to the edges of the world to prevent panning
+    map.setMaxBounds([
+        [-90, -180],
+        [90, 180]
+    ]);
+
+    let markersLayer = L.layerGroup().addTo(map);
+
+    async function loadFloodZones() {
+      markersLayer.clearLayers();
+      if (!backendAlive) {
+        // demo markers if backend not present
+        const demo = [
+          { pincode:'411001', latitude:19.0176, longitude:73.8567, status:'Severe', water_level:7.6, updated_at: new Date().toISOString() },
+          { pincode:'400001', latitude:19.0760, longitude:72.8777, status:'Warning', water_level:4.2, updated_at: new Date().toISOString() },
+          { pincode:'422001', latitude:20.0110, longitude:73.7805, status:'Normal', water_level:1.2, updated_at: new Date().toISOString() }
+        ];
+        demo.forEach(item => addMarker(item));
+        document.getElementById('kpi-gauges').textContent = 'Demo';
+        return;
+      }
+
+      try {
+        const res = await fetch(apiBase + '/api/flood-status/all');
+        const data = await res.json();
+        document.getElementById('kpi-gauges').textContent = (data && data.length) ? data.length : '—';
+        data.forEach(item => addMarker(item));
+      } catch (e) {
+        console.error('loadFloodZones', e);
+      }
+    }
+
+    function addMarker(item) {
+      const lat = item.latitude || item.lat || (19.7515 + Math.random()*2 - 1);
+      const lng = item.longitude || item.lng || (75.7139 + Math.random()*2 - 1);
+      const color = (item.status === 'Severe') ? 'red' : (item.status === 'Warning') ? 'orange' : 'green';
+      const marker = L.circleMarker([lat,lng], { radius:8, fillColor: color, color:'#000', weight:1, fillOpacity:0.9 }).addTo(markersLayer);
+      const popup = `<b>Pincode:</b> ${item.pincode || 'N/A'}<br><b>Status:</b> ${item.status || 'N/A'}<br><b>Water:</b> ${item.water_level || 'N/A'} m<br><small>${new Date(item.updated_at||Date.now()).toLocaleString()}</small>`;
+      marker.bindPopup(popup);
+    }
+
+    loadFloodZones();
+    setInterval(loadFloodZones, 5*60*1000);
+    window.addEventListener('resize', ()=> map.invalidateSize());
+
+    // --- Pincode check ---
+    document.getElementById('checkBtn').addEventListener('click', async () => {
+      const pc = document.getElementById('pincodeInput').value.trim();
+      if (!pc) return alert('Enter a pincode');
+      const card = document.getElementById('statusCard');
+      if (!backendAlive) {
+        // demo
+        const demoResp = { pincode: pc, status: (pc==='411001' ? 'Severe' : 'Normal'), water_level: pc==='411001' ? 7.5 : 1.1, station_name:'Demo Station', updated_at: new Date().toISOString() };
+        fillStatusCard(demoResp); card.classList.remove('hidden'); return;
+      }
+      try {
+        const res = await fetch(apiBase + '/api/flood-status/' + pc);
+        const data = await res.json();
+        if (data.message) {
+          fillStatusCard({ pincode:pc, status:'No Data', water_level:'—', station_name:'—', updated_at: new Date().toISOString() });
+        } else fillStatusCard(data);
+        card.classList.remove('hidden');
+      } catch (e) { alert('Error fetching pincode'); console.error(e); }
+    });
+
+    function fillStatusCard(d) {
+      document.getElementById('pincodeDisplay').textContent = `Pincode: ${d.pincode || ''}`;
+      document.getElementById('statusText').textContent = d.status || '—';
+      document.getElementById('waterLevel').textContent = d.water_level || '—';
+      document.getElementById('stationName').textContent = d.station_name || '—';
+      document.getElementById('lastUpdated').textContent = d.updated_at ? new Date(d.updated_at).toLocaleString() : new Date().toLocaleString();
+      // minor UI color
+      document.getElementById('statusText').className = d.status === 'Severe' ? 'text-red-400 font-bold' : d.status === 'Warning' ? 'text-yellow-300 font-bold' : 'text-green-400 font-bold';
+    }
+
+    // --- Alerts list (recent) ---
+    async function loadRecentAlerts() {
+      const el = document.getElementById('alertsList');
+      el.innerHTML = '';
+      if (!backendAlive) {
+        const demo = [
+          { pincode:'411001', message:'Severe: water level 7.5m', created_at:new Date().toISOString(), severity:'Severe' },
+          { pincode:'400001', message:'Warning: 4.2m', created_at:new Date().toISOString(), severity:'Warning' }
+        ];
+        demo.forEach(a=> el.insertAdjacentHTML('beforeend', renderAlert(a)));
+        return;
+      }
+      try {
+        const res = await fetch(apiBase + '/api/flood-status/all');
+        const data = await res.json();
+        (data || []).slice(0,10).forEach(item => el.insertAdjacentHTML('beforeend', renderAlert({ pincode:item.pincode, message: `${item.status} − ${item.water_level}m`, created_at:item.updated_at, severity:item.status })));
+      } catch (e) { console.error(e); }
+    }
+    function renderAlert(a) {
+      const color = a.severity === 'Severe' ? 'text-red-400' : a.severity === 'Warning' ? 'text-yellow-300' : 'text-green-400';
+      return `<div class="border-l-4 pl-3 py-2"><strong class="${color}">${a.severity} · ${a.pincode}</strong><div class="text-xs muted">${new Date(a.created_at).toLocaleString()}</div><div class="mt-1">${a.message}</div></div>`;
+    }
+    document.getElementById('refreshAlerts').addEventListener('click', loadRecentAlerts);
+    loadRecentAlerts();
+
+   // --- Subscriptions (store locally or send to backend) ---
+const subscribeForm = document.getElementById('subscribeForm');
+
+subscribeForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById('subName').value.trim();
+  const phone = document.getElementById('subPhone').value.trim();
+  const email = document.getElementById('subEmail').value.trim();
+  const pincode = document.getElementById('subPincode').value.trim();
+
+  if (!name || !pincode) {
+    alert("⚠️ Please fill in both your Name and Pincode!");
+    return;
+  }
+
+  const obj = { name, phone, email, pincode, ts: Date.now() };
+
+  try {
+    const res = await fetch("http://localhost:5500/api/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(obj),
+    });
+
+    const result = await res.json();
+
+    if (res.ok) {
+      showToast("✅ Subscription successful! Flood alerts will be sent to your number.");
+      loadLocalSubs();
+      subscribeForm.reset();
+    } else {
+      alert("⚠️ " + (result.message || "Failed to subscribe."));
+    }
+  } catch (err) {
+    console.warn("❌ Backend connection error:", err);
+    showToast("⚠️ Backend unavailable — saved locally.");
+
+    // Save locally if backend fails
+    const arr = JSON.parse(localStorage.getItem("subs") || "[]");
+    arr.unshift(obj);
+    localStorage.setItem("subs", JSON.stringify(arr));
+    loadLocalSubs();
+  }
+});
+
+    // --- Feedback form with media preview & upload ---
+    const fbForm = document.getElementById('feedbackForm');
+    const mediaInput = document.getElementById('fb-media');
+    const preview = document.getElementById('mediaPreview');
+    mediaInput.addEventListener('change', () => {
+      preview.innerHTML = '';
+      const file = mediaInput.files[0];
+      if (!file) return;
+      if (file.type.startsWith('image/')) {
+        const img = document.createElement('img'); img.src = URL.createObjectURL(file); img.className = 'max-h-40 rounded'; preview.appendChild(img);
+      } else if (file.type.startsWith('video/')) {
+        const v = document.createElement('video'); v.src = URL.createObjectURL(file); v.controls = true; v.className = 'max-h-40 rounded'; preview.appendChild(v);
+      } else {
+        preview.textContent = 'File selected';
+      }
+    });
+
+    fbForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData();
+      fd.append('name', document.getElementById('fb-name').value);
+      fd.append('pincode', document.getElementById('fb-pincode').value);
+      fd.append('description', document.getElementById('fb-desc').value);
+      if (mediaInput.files[0]) fd.append('media', mediaInput.files[0]);
+
+      // attach JWT if logged in
+      const token = localStorage.getItem('token');
+      try {
+        if (backendAlive) {
+          const res = await fetch(apiBase + '/api/citizen-feedback', { method:'POST', body: fd, headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+          if (res.ok) { showToast('Feedback submitted'); fbForm.reset(); preview.innerHTML=''; return; }
+          else { alert('Upload failed'); }
+        } else {
+          // fallback: save locally
+          const local = JSON.parse(localStorage.getItem('localFeedback') || '[]');
+          const reader = new FileReader();
+          if (mediaInput.files[0]) {
+            reader.onload = () => {
+              local.unshift({ name: fd.get('name'), pincode: fd.get('pincode'), description: fd.get('description'), mediaData: reader.result, ts: Date.now() });
+              localStorage.setItem('localFeedback', JSON.stringify(local));
+              showToast('Feedback saved locally');
+              fbForm.reset(); preview.innerHTML='';
+            };
+            reader.readAsDataURL(mediaInput.files[0]);
+          } else {
+            local.unshift({ name: fd.get('name'), pincode: fd.get('pincode'), description: fd.get('description'), ts: Date.now() });
+            localStorage.setItem('localFeedback', JSON.stringify(local));
+            showToast('Feedback saved locally');
+            fbForm.reset(); preview.innerHTML='';
+          }
+        }
+      } catch (err) { console.error(err); alert('Feedback failed'); }
+    });
+
+    // --- Login/Register modal logic (simple inline) ---
+    const showLoginBtn = document.getElementById('showLoginBtn');
+    showLoginBtn.addEventListener('click', openAuth);
+
+    function openAuth() {
+      // quick modal using prompt dialogs for brevity (keeps single file)
+      const choice = prompt('Type "login" to login or "register" to register: (demo mode if no backend)');
+      if (!choice) return;
+      if (choice.toLowerCase() === 'register') return registerFlow();
+      if (choice.toLowerCase() === 'login') return loginFlow();
+      alert('Unknown');
+    }
+
+    async function registerFlow() {
+      const name = prompt('Full name:') || '';
+      const email = prompt('Email:') || '';
+      const password = prompt('Password:') || '';
+      const pincode = prompt('Pincode:') || '';
+      const phone = prompt('Phone (with country code):') || '';
+      const body = { name, email, password, pincode, phone };
+
+      if (backendAlive) {
+        try {
+          const res = await fetch(apiBase + '/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          const text = await res.text();
+          alert(text);
+          if (res.ok) { showToast('Registered'); return; }
+        } catch (e) { console.warn('register failed', e); }
+      }
+      // fallback: save user locally (demo)
+      const users = JSON.parse(localStorage.getItem('demoUsers') || '[]');
+      users.push({ ...body, id: Date.now() });
+      localStorage.setItem('demoUsers', JSON.stringify(users));
+      alert('Registered (demo) — you can now "login"');
+      showToast('Registered (demo)');
+    }
+
+    async function loginFlow() {
+      const email = prompt('Email:') || '';
+      const password = prompt('Password:') || '';
+      if (backendAlive) {
+        try {
+          const res = await fetch(apiBase + '/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
+          if (!res.ok) { alert(await res.text()); return; }
+          const data = await res.json();
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('name', data.name || '');
+          localStorage.setItem('pincode', data.pincode || '');
+          showToast('Logged in');
+          loadUserUI();
+          return;
+        } catch (e) { console.warn('login failed', e); }
+      }
+      // fallback demo login
+      const users = JSON.parse(localStorage.getItem('demoUsers') || '[]');
+      const u = users.find(x => x.email === email && x.password === password);
+      if (!u) { alert('Invalid demo credentials'); return; }
+      localStorage.setItem('token','demo-'+Date.now());
+      localStorage.setItem('name', u.name || '');
+      localStorage.setItem('pincode', u.pincode || '');
+      showToast('Logged in (demo)');
+      loadUserUI();
+    }
+
+    // --- load user-specific UI ---
+    async function loadUserUI() {
+      const name = localStorage.getItem('name');
+      const pincode = localStorage.getItem('pincode');
+      document.getElementById('userName').textContent = name ? `Hi, ${name}` : '';
+      // personal alerts from backend (if available)
+      if (localStorage.getItem('token') && backendAlive) {
+        try {
+          const res = await fetch(apiBase + '/user/alerts', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } });
+          if (res.ok) {
+            const alerts = await res.json();
+            const el = document.getElementById('personalAlerts'); el.innerHTML = '';
+            if (alerts.length === 0) el.innerHTML = '<div class="muted">No alerts for your area.</div>';
+            alerts.forEach(a => el.insertAdjacentHTML('beforeend', `<div class="text-sm border-b py-1"><strong>${a.severity}</strong> ${a.message}<div class="muted text-xs">${new Date(a.created_at).toLocaleString()}</div></div>`));
+          }
+        } catch (e) { console.warn('user alerts failed', e); }
+      } else {
+        // demo personal alerts
+        const el = document.getElementById('personalAlerts');
+        el.innerHTML = `<div class="muted">No backend token — demo alerts for ${pincode || '—'}</div>`;
+      }
+    }
+    // try to load on page load
+    loadUserUI();
+
+    // logout
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('token'); localStorage.removeItem('name'); localStorage.removeItem('pincode');
+      showToast('Logged out');
+      loadUserUI();
+    });
+
+    // small navigation actions
+    document.getElementById('goToMap').addEventListener('click', ()=> window.scrollTo({ top: document.getElementById('map').offsetTop - 60, behavior: 'smooth'}));
+    document.getElementById('openFeedback').addEventListener('click', ()=> window.scrollTo({ top: document.getElementById('fb-desc').offsetTop - 120, behavior: 'smooth'}));
+
+    // initial UI loads
+    loadRecentAlerts();
+    loadLocalSubs();
+    setInterval(() => { document.getElementById('last-updated').textContent = `Data refreshed: ${new Date().toLocaleString()}`; }, 60000);
+  </script>
+  
+
+
+
+
+</body>
+</html>
